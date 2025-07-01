@@ -6,10 +6,10 @@ import sqlite3
 from sqlite3 import Error
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": ["https://cdobbin.github.io", "http://localhost:8000"]}})  # Allow GitHub Pages and local frontend
+CORS(app, resources={r"/*": {"origins": ["https://cdobbin.github.io", "http://localhost:8000"]}})
 
 # USDA API key from environment variable
-USDA_API_KEY = os.getenv("USDA_API_KEY", "YOUR_USDA_API_KEY")
+USDA_API_KEY = os.getenv("USDA_API_KEY", "s5eJOQy3E9zitYnZsYQBShtSbfdOfNFPdu9kVnn0")  # Set via environment variable
 
 # USDA FoodData Central API endpoint
 FDC_API_URL = "https://api.nal.usda.gov/fdc/v1/foods/search"
@@ -88,10 +88,15 @@ def search_ingredient():
     if not query:
         return jsonify({'error': 'No query provided'}), 400
     
+    # Append "raw" for meat-related queries to prioritize whole ingredients
+    meat_keywords = ['chicken', 'beef', 'pork', 'turkey', 'fish']
+    if any(keyword in query.lower() for keyword in meat_keywords):
+        query = f"{query} raw"
+    
     params = {
         'api_key': USDA_API_KEY,
         'query': query,
-        'pageSize': 10,
+        'pageSize': 15,
         'dataType': ['Foundation', 'SR Legacy']
     }
     
@@ -99,7 +104,22 @@ def search_ingredient():
         response = requests.get(FDC_API_URL, params=params)
         response.raise_for_status()
         data = response.json()
-        return jsonify(data.get('foods', []))
+        foods = data.get('foods', [])
+        
+        # Filter out processed foods
+        exclude_terms = ['spread', 'soup', 'canned', 'processed', 'sausage', 'luncheon']
+        filtered_foods = [
+            food for food in foods
+            if not any(term in food.get('description', '').lower() for term in exclude_terms)
+        ]
+        
+        # Sort to prioritize descriptions with specific cuts
+        filtered_foods = sorted(
+            filtered_foods,
+            key=lambda x: any(cut in x.get('description', '').lower() for cut in ['breast', 'thigh', 'wing', 'leg', 'loin', 'chop'])
+        )
+        
+        return jsonify(filtered_foods[:10])
     except requests.RequestException as e:
         return jsonify({'error': str(e)}), 500
 
