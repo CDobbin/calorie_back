@@ -105,16 +105,27 @@ def login():
 def search_ingredient():
     query = request.args.get('query', '').strip()
     if not query:
+        print("No query provided")
         return jsonify([]), 200
-    params = {'api_key': USDA_API_KEY, 'query': query, 'pageSize': 15, 'dataType': ['Foundation', 'SR Legacy', 'Branded']}
+    if not isinstance(query, str):
+        print(f"Invalid query type: {type(query)}")
+        return error_response('Query must be a string', 400)
+    params = {
+        'api_key': USDA_API_KEY,
+        'query': query,
+        'pageSize': 15,
+        'dataType': ['Foundation', 'SR Legacy', 'Branded']
+    }
+    print(f"Sending USDA API request with query: {query}")
     try:
         response = requests.get(FDC_API_URL, params=params, timeout=5)
         response.raise_for_status()
         data = response.json()
+        print(f"USDA API response: {json.dumps(data, indent=2)}")
         foods = data.get('foods', [])
         return jsonify(foods[:10]), 200
     except requests.exceptions.RequestException as e:
-        print(f"USDA API error: {str(e)}")  # Log to Render console
+        print(f"USDA API error: {str(e)}")
         return error_response(f'Failed to fetch ingredients: {str(e)}', 500)
 
 @app.route('/calculate_nutrition', methods=['POST'])
