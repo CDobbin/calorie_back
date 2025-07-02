@@ -36,7 +36,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 NUTRIENT_IDS = {
     'calories': 1008,
     'protein': 1003,
-    'fat': 1004, 
+    'fat': 1004,
     'carbohydrates': 1005,
     'fiber': 1079
 }
@@ -46,6 +46,10 @@ def get_db():
 
 def error_response(message, status_code):
     return jsonify({'error': message, 'status': status_code}), status_code
+
+@app.route('/', methods=['GET'])
+def health_check():
+    return jsonify({'message': 'Calorie Calculator API is running'}), 200
 
 @app.route('/register', methods=['POST'])
 def register():
