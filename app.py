@@ -121,6 +121,7 @@ def login():
 @jwt_required()
 def search_ingredient():
     query = request.args.get('query', '').strip()
+    logger.debug(f"Received search_ingredient request with query: {query}")
     if not query:
         logger.debug("No query provided")
         return jsonify([]), 200
@@ -140,7 +141,7 @@ def search_ingredient():
     }
     logger.debug(f"Sending USDA API request with query: {query}, encoded: {encoded_query}, params: {params}")
     try:
-        response = requests.get(FDC_API_URL, params=params, timeout=5)
+        response = requests.get(FDC_API_URL, params=params, timeout=10)  # Increased timeout to 10 seconds
         logger.debug(f"USDA API request URL: {response.url}")
         response.raise_for_status()
         data = response.json()
@@ -153,6 +154,9 @@ def search_ingredient():
     except requests.exceptions.RequestException as e:
         logger.debug(f"USDA API request error: {str(e)}")
         return error_response(f'Failed to fetch ingredients: {str(e)}', 500)
+    except Exception as e:
+        logger.error(f"Unexpected error in search_ingredient: {str(e)}")
+        return error_response(f'Unexpected error: {str(e)}', 500)
 
 @app.route('/calculate_nutrition', methods=['POST'])
 @jwt_required()
