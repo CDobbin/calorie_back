@@ -10,6 +10,7 @@ import json
 from werkzeug.security import generate_password_hash, check_password_hash
 import re
 from dotenv import load_dotenv
+import urllib.parse
 
 load_dotenv()
 
@@ -110,13 +111,15 @@ def search_ingredient():
     if not isinstance(query, str):
         print(f"Invalid query type: {type(query)}")
         return error_response('Query must be a string', 400)
+    if not USDA_API_KEY:
+        print("USDA_API_KEY is not set")
+        return error_response('Server configuration error: API key missing', 500)
+    encoded_query = urllib.parse.quote(query)
     params = {
         'api_key': USDA_API_KEY,
-        'query': query,
-        'pageSize': 15,
-        'dataType': 'Foundation,SR Legacy,Branded'
+        'query': encoded_query
     }
-    print(f"Sending USDA API request with query: {query}, params: {params}")
+    print(f"Sending USDA API request with query: {query}, encoded: {encoded_query}, params: {params}")
     try:
         response = requests.get(FDC_API_URL, params=params, timeout=5)
         response.raise_for_status()
