@@ -2,13 +2,20 @@ from flask import Flask, request, jsonify
 import requests
 from flask_cors import CORS
 import os
+import psycopg2
+import jwt
+import datetime
+from functools import wraps
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": ["https://cdobbin.github.io", "http://localhost:8000"]}})
+CORS(app)
 
-USDA_API_KEY = os.getenv("USDA_API_KEY", "s5eJOQy3E9zitYnZsYQBShtSbfdOfNFPdu9kVnn0")
+USDA_API_KEY = os.getenv("USDA_API_KEY")
 FDC_API_URL = "https://api.nal.usda.gov/fdc/v1/foods/search"
 FDC_FOOD_URL = "https://api.nal.usda.gov/fdc/v1/food"
+DATABASE_URL = os.getenv("DATABASE_URL")
+JWT_SECRET = os.getenv("JWT_SECRET", "supersecret")
 
 NUTRIENT_IDS = {
     'calories': 1008,
@@ -18,12 +25,64 @@ NUTRIENT_IDS = {
     'fiber': 1079
 }
 
+def get_db():
+    return psycopg2.connect(DATABASE_URL, sslmode='require')
+
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.headers.get('Authorization')
+        if not token:
+            return jsonify({'error': 'Token is missing'}), 403
+        try:
+            data = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+            current_user = data['user_id']
+        except Exception as e:
+            return jsonify({'error': 'Token is invalid'}), 403
+        return f(current_user, *args, **kwargs)
+    return decorated
+
+@app.route('/register', methods=['POST'])
+def register():
+    data = request.json
+    email = data.get('email')
+    password = generate_password_hash(data.get('password'))
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("INSERT INTO users (email, password) VALUES (%s, %s) RETURNING id", (email, password))
+        user_id = cur.fetchone()[0]
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({'message': 'User registered', 'user_id': user_id}), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.json
+    email = data.get('email')
+    password = data.get('password')
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT id, password FROM users WHERE email = %s", (email,))
+        user = cur.fetchone()
+        cur.close()
+        conn.close()
+        if not user or not check_password_hash(user[1], password):
+            return jsonify({'error': 'Invalid credentials'}), 401
+        token = jwt.encode({'user_id': user[0], 'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)}, JWT_SECRET, algorithm="HS256")
+        return jsonify({'token': token})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/search_ingredient', methods=['GET'])
 def search_ingredient():
     query = request.args.get('query', '').strip()
     if not query:
         return jsonify([]), 200
-    
     params = {'api_key': USDA_API_KEY, 'query': query, 'pageSize': 15, 'dataType': ['Foundation', 'SR Legacy', 'Branded']}
     try:
         response = requests.get(FDC_API_URL, params=params, timeout=5)
@@ -32,7 +91,6 @@ def search_ingredient():
         foods = data.get('foods', [])
         return jsonify(foods[:10]), 200
     except Exception as e:
-        print(f"API request failed: {str(e)}")
         return jsonify({'error': 'Failed to fetch ingredients'}), 500
 
 @app.route('/calculate_nutrition', methods=['POST'])
@@ -40,30 +98,57 @@ def calculate_nutrition():
     ingredients = request.json.get('ingredients', [])
     if not ingredients:
         return jsonify({'error': 'No ingredients provided'}), 400
-
     total_nutrients = {key: 0 for key in NUTRIENT_IDS}
-
     for ingredient in ingredients:
         fdc_id = ingredient.get('fdcId')
         quantity = float(ingredient.get('quantity', 0))
         scaling_factor = quantity / 100 if quantity > 0 else 0
-
         try:
             response = requests.get(f"{FDC_FOOD_URL}/{fdc_id}?api_key={USDA_API_KEY}")
             response.raise_for_status()
             food_data = response.json()
-            nutrients = {
-                n['nutrient']['id']: n.get('amount', 0)
-                for n in food_data.get('foodNutrients', [])
-                if 'nutrient' in n and 'id' in n['nutrient']
-            }
+            nutrients = {n['nutrient']['id']: n.get('amount', 0) for n in food_data.get('foodNutrients', []) if 'nutrient' in n and 'id' in n['nutrient']}
             for key, nid in NUTRIENT_IDS.items():
                 total_nutrients[key] += nutrients.get(nid, 0) * scaling_factor
         except Exception as e:
-            print(f"Error fetching data for fdcId {fdc_id}: {e}")
             return jsonify({'error': str(e)}), 500
-
     return jsonify(total_nutrients)
+
+@app.route('/save_recipe', methods=['POST'])
+@token_required
+def save_recipe(current_user):
+    data = request.json
+    name = data.get('name')
+    ingredients = data.get('ingredients')
+    nutrition = data.get('nutrition')
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("INSERT INTO recipes (user_id, name, ingredients, nutrition) VALUES (%s, %s, %s, %s)", (current_user, name, json.dumps(ingredients), json.dumps(nutrition)))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({'message': 'Recipe saved'}), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/get_recipes', methods=['GET'])
+@token_required
+def get_recipes(current_user):
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT id, name, ingredients, nutrition, created_at FROM recipes WHERE user_id = %s ORDER BY created_at DESC", (current_user,))
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        recipes = [
+            {'id': r[0], 'name': r[1], 'ingredients': r[2], 'nutrition': r[3], 'created_at': r[4].isoformat()}
+            for r in rows
+        ]
+        return jsonify(recipes)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
