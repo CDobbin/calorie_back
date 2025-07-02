@@ -113,8 +113,9 @@ def search_ingredient():
         data = response.json()
         foods = data.get('foods', [])
         return jsonify(foods[:10]), 200
-    except Exception as e:
-        return error_response('Failed to fetch ingredients', 500)
+    except requests.exceptions.RequestException as e:
+        print(f"USDA API error: {str(e)}")  # Log to Render console
+        return error_response(f'Failed to fetch ingredients: {str(e)}', 500)
 
 @app.route('/calculate_nutrition', methods=['POST'])
 @jwt_required()
