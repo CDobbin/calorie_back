@@ -9,6 +9,9 @@ import psycopg
 import json
 from werkzeug.security import generate_password_hash, check_password_hash
 import re
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
@@ -18,7 +21,12 @@ app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
 jwt = JWTManager(app)
 
 # Rate Limiter Configuration
-limiter = Limiter(app, key_func=get_remote_address, default_limits=["200 per day", "50 per hour"])
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://"
+)
 
 USDA_API_KEY = os.getenv("USDA_API_KEY")
 FDC_API_URL = "https://api.nal.usda.gov/fdc/v1/foods/search"
@@ -28,7 +36,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 NUTRIENT_IDS = {
     'calories': 1008,
     'protein': 1003,
-    'fat': 1004,
+    'fat': 1004, 
     'carbohydrates': 1005,
     'fiber': 1079
 }
