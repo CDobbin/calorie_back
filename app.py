@@ -11,11 +11,16 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import re
 from dotenv import load_dotenv
 import urllib.parse
+import logging
 
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 # JWT Configuration
 app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
@@ -106,32 +111,35 @@ def login():
 def search_ingredient():
     query = request.args.get('query', '').strip()
     if not query:
-        print("No query provided")
+        logger.debug("No query provided")
         return jsonify([]), 200
     if not isinstance(query, str):
-        print(f"Invalid query type: {type(query)}")
+        logger.debug(f"Invalid query type: {type(query)}")
         return error_response('Query must be a string', 400)
+    if len(query) < 3:
+        logger.debug(f"Query too short: {query}")
+        return jsonify([]), 200
     if not USDA_API_KEY:
-        print("USDA_API_KEY is not set")
+        logger.debug("USDA_API_KEY is not set")
         return error_response('Server configuration error: API key missing', 500)
     encoded_query = urllib.parse.quote(query)
     params = {
         'api_key': USDA_API_KEY,
         'query': encoded_query
     }
-    print(f"Sending USDA API request with query: {query}, encoded: {encoded_query}, params: {params}")
+    logger.debug(f"Sending USDA API request with query: {query}, encoded: {encoded_query}, params: {params}")
     try:
         response = requests.get(FDC_API_URL, params=params, timeout=5)
         response.raise_for_status()
         data = response.json()
-        print(f"USDA API response: {json.dumps(data, indent=2)}")
+        logger.debug(f"USDA API response: {json.dumps(data, indent=2)}")
         foods = data.get('foods', [])
         return jsonify(foods[:10]), 200
     except requests.exceptions.HTTPError as e:
-        print(f"USDA API HTTP error: {str(e)}")
+        logger.debug(f"USDA API HTTP error: {str(e)}")
         return error_response(f'Failed to fetch ingredients: {str(e)}', 500)
     except requests.exceptions.RequestException as e:
-        print(f"USDA API request error: {str(e)}")
+        logger.debug(f"USDA API request error: {str(e)}")
         return error_response(f'Failed to fetch ingredients: {str(e)}', 500)
 
 @app.route('/calculate_nutrition', methods=['POST'])
