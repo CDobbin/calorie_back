@@ -3,9 +3,7 @@ import requests
 from flask_cors import CORS
 import os
 import psycopg2
-import jwt
-import datetime
-from functools import wraps
+import json
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
@@ -15,7 +13,6 @@ USDA_API_KEY = os.getenv("USDA_API_KEY")
 FDC_API_URL = "https://api.nal.usda.gov/fdc/v1/foods/search"
 FDC_FOOD_URL = "https://api.nal.usda.gov/fdc/v1/food"
 DATABASE_URL = os.getenv("DATABASE_URL")
-JWT_SECRET = os.getenv("JWT_SECRET", "supersecret")
 
 NUTRIENT_IDS = {
     'calories': 1008,
@@ -27,20 +24,6 @@ NUTRIENT_IDS = {
 
 def get_db():
     return psycopg2.connect(DATABASE_URL, sslmode='require')
-
-def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = request.headers.get('Authorization')
-        if not token:
-            return jsonify({'error': 'Token is missing'}), 403
-        try:
-            data = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
-            current_user = data['user_id']
-        except Exception as e:
-            return jsonify({'error': 'Token is invalid'}), 403
-        return f(current_user, *args, **kwargs)
-    return decorated
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -73,8 +56,7 @@ def login():
         conn.close()
         if not user or not check_password_hash(user[1], password):
             return jsonify({'error': 'Invalid credentials'}), 401
-        token = jwt.encode({'user_id': user[0], 'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)}, JWT_SECRET, algorithm="HS256")
-        return jsonify({'token': token})
+        return jsonify({'message': 'Login successful', 'user_id': user[0]}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -115,16 +97,18 @@ def calculate_nutrition():
     return jsonify(total_nutrients)
 
 @app.route('/save_recipe', methods=['POST'])
-@token_required
-def save_recipe(current_user):
+def save_recipe():
     data = request.json
+    user_id = data.get('user_id')
     name = data.get('name')
     ingredients = data.get('ingredients')
     nutrition = data.get('nutrition')
+    if not user_id:
+        return jsonify({'error': 'Missing user_id'}), 400
     try:
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("INSERT INTO recipes (user_id, name, ingredients, nutrition) VALUES (%s, %s, %s, %s)", (current_user, name, json.dumps(ingredients), json.dumps(nutrition)))
+        cur.execute("INSERT INTO recipes (user_id, name, ingredients, nutrition) VALUES (%s, %s, %s, %s)", (user_id, name, json.dumps(ingredients), json.dumps(nutrition)))
         conn.commit()
         cur.close()
         conn.close()
@@ -132,13 +116,16 @@ def save_recipe(current_user):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/get_recipes', methods=['GET'])
-@token_required
-def get_recipes(current_user):
+@app.route('/get_recipes', methods=['POST'])
+def get_recipes():
+    data = request.json
+    user_id = data.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Missing user_id'}), 400
     try:
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("SELECT id, name, ingredients, nutrition, created_at FROM recipes WHERE user_id = %s ORDER BY created_at DESC", (current_user,))
+        cur.execute("SELECT id, name, ingredients, nutrition, created_at FROM recipes WHERE user_id = %s ORDER BY created_at DESC", (user_id,))
         rows = cur.fetchall()
         cur.close()
         conn.close()
