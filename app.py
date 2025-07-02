@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 import requests
 from flask_cors import CORS
 import os
-import psycopg2
+import psycopg
 import json
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -23,7 +23,7 @@ NUTRIENT_IDS = {
 }
 
 def get_db():
-    return psycopg2.connect(DATABASE_URL, sslmode='require')
+    return psycopg.connect(DATABASE_URL, sslmode='require')
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -139,4 +139,3 @@ def get_recipes():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
-    
