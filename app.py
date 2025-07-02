@@ -114,9 +114,9 @@ def search_ingredient():
         'api_key': USDA_API_KEY,
         'query': query,
         'pageSize': 15,
-        'dataType': ['Foundation', 'SR Legacy', 'Branded']
+        'dataType': 'Foundation,SR Legacy,Branded'
     }
-    print(f"Sending USDA API request with query: {query}")
+    print(f"Sending USDA API request with query: {query}, params: {params}")
     try:
         response = requests.get(FDC_API_URL, params=params, timeout=5)
         response.raise_for_status()
@@ -124,8 +124,11 @@ def search_ingredient():
         print(f"USDA API response: {json.dumps(data, indent=2)}")
         foods = data.get('foods', [])
         return jsonify(foods[:10]), 200
+    except requests.exceptions.HTTPError as e:
+        print(f"USDA API HTTP error: {str(e)}")
+        return error_response(f'Failed to fetch ingredients: {str(e)}', 500)
     except requests.exceptions.RequestException as e:
-        print(f"USDA API error: {str(e)}")
+        print(f"USDA API request error: {str(e)}")
         return error_response(f'Failed to fetch ingredients: {str(e)}', 500)
 
 @app.route('/calculate_nutrition', methods=['POST'])
