@@ -141,7 +141,7 @@ def search_ingredient():
     }
     logger.debug(f"Sending USDA API request with query: {query}, encoded: {encoded_query}, params: {params}")
     try:
-        response = requests.get(FDC_API_URL, params=params, timeout=10)  # Increased timeout to 10 seconds
+        response = requests.get(FDC_API_URL, params=params, timeout=10)
         logger.debug(f"USDA API request URL: {response.url}")
         response.raise_for_status()
         data = response.json()
@@ -251,6 +251,31 @@ def get_recipes():
 
     except Exception as e:
         logger.error(f"Get recipes error: {str(e)}")
+        return error_response(str(e), 500)
+
+@app.route('/delete_recipe', methods=['POST'])
+@jwt_required()
+def delete_recipe():
+    user_id = get_jwt_identity()
+    data = request.json
+    recipe_id = data.get('recipe_id')
+    if not recipe_id:
+        logger.debug("Missing recipe_id")
+        return error_response('Missing recipe_id', 400)
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM recipes WHERE id = %s AND user_id = %s", (recipe_id, user_id))
+        if cur.rowcount == 0:
+            logger.debug(f"No recipe found with id {recipe_id} for user_id {user_id}")
+            return error_response('Recipe not found or not authorized', 404)
+        conn.commit()
+        cur.close()
+        conn.close()
+        logger.debug(f"Recipe deleted: id={recipe_id}, user_id={user_id}")
+        return jsonify({'message': 'Recipe deleted'}), 200
+    except Exception as e:
+        logger.error(f"Delete recipe error: {str(e)}")
         return error_response(str(e), 500)
 
 if __name__ == '__main__':
