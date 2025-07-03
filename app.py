@@ -109,7 +109,7 @@ def login():
         if not user or not check_password_hash(user[1], password):
             logger.debug("Invalid credentials")
             return error_response('Invalid credentials', 401)
-        access_token = create_access_token(identity=user[0])
+        access_token = create_access_token(identity=str(user[0]))
         logger.debug(f"Login successful for user_id: {user[0]}")
         return jsonify({'message': 'Login successful', 'access_token': access_token}), 200
     except Exception as e:
