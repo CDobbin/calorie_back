@@ -219,18 +219,36 @@ def get_recipes():
     try:
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("SELECT id, name, ingredients, nutrition, created_at FROM recipes WHERE user_id = %s ORDER BY created_at DESC", 
-                   (user_id,))
+        cur.execute(
+            "SELECT id, name, ingredients, nutrition, created_at FROM recipes WHERE user_id = %s ORDER BY created_at DESC", 
+            (user_id,)
+        )
         rows = cur.fetchall()
         cur.close()
         conn.close()
-        recipes = [
-            {'id': r[0], 'name': r[1], 'ingredients': json.loads(r[2]), 'nutrition': json.loads(r[3]), 
-             'created_at': r[4].isoformat()}
-            for r in rows
-        ]
+
+        recipes = []
+        for r in rows:
+            ingredients = r[2]
+            nutrition = r[3]
+
+            # ✅ Only parse if still a string
+            if isinstance(ingredients, str):
+                ingredients = json.loads(ingredients)
+            if isinstance(nutrition, str):
+                nutrition = json.loads(nutrition)
+
+            recipes.append({
+                'id': r[0],
+                'name': r[1],
+                'ingredients': ingredients,
+                'nutrition': nutrition,
+                'created_at': r[4].isoformat()
+            })
+
         logger.debug(f"Retrieved {len(recipes)} recipes for user_id: {user_id}")
         return jsonify(recipes), 200
+
     except Exception as e:
         logger.error(f"Get recipes error: {str(e)}")
         return error_response(str(e), 500)
