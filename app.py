@@ -30,7 +30,7 @@ jwt = JWTManager(app)
 limiter = Limiter(
     get_remote_address,
     app=app,
-    default_limits=["200 per day", "50 per hour"],
+    default_limits=["500 per day", "100 per hour"],
     storage_uri="memory://"
 )
 
@@ -117,7 +117,7 @@ def login():
         return error_response(str(e), 500)
 
 @app.route('/search_ingredient', methods=['GET'])
-@limiter.limit("10 per minute")
+@limiter.limit("100 per minute")
 @jwt_required()
 def search_ingredient():
     query = request.args.get('query', '').strip()
